@@ -1,0 +1,24 @@
+{
+  "database": "auth",
+  "table": "User",
+  "records": [
+    {
+      "username": "admin",
+      "passwordHash": "$argon2id$v=19$m=19456,t=2,p=1$NYixS++rx1fpuKEdEfIdTg$5Xz0JnPA2W/bV6ify6F4NAzl/MAbXg72KH01uF8Nez0",
+      "active": true,
+      "roleId": "admin",
+      "email": "admin@example.com",
+      "createdAt": 1738800000,
+      "updatedAt": 1738800000
+    },
+    {
+      "username": "user",
+      "passwordHash": "$argon2id$v=19$m=19456,t=2,p=1$ShrdeXsxw1KtkTRYyKyEnw$mlZiVEd9jpjOT+CM5vwvLMriPTK0h2CHZdFJGnUSSUo",
+      "active": true,
+      "roleId": "viewer",
+      "email": "user@example.com",
+      "createdAt": 1738800000,
+      "updatedAt": 1738800000
+    }
+  ]
+}

@@ -1,0 +1,45 @@
+# Yeti Auth Extension Schema
+# Database tables for authentication and authorization
+
+# User table for Basic/JWT authentication
+type User @table(database: "yeti-auth") @export {
+  username: String @primaryKey
+  passwordHash: String
+  active: Boolean
+  roleId: String @indexed
+  role: Role @relationship(from: roleId)
+  email: String @indexed
+  createdAt: Int
+  updatedAt: Int
+}
+
+# Role table for RBAC
+type Role @table(database: "yeti-auth") @export {
+  id: String @primaryKey
+  name: String
+  permissions: String  # JSON blob with permission definitions
+  users: [User] @relationship(to: roleId)
+  createdAt: Int
+}
+
+# CSRF token storage for OAuth flows
+type CSRFToken @table(database: "yeti-auth") @export {
+  state: String @primaryKey
+  provider: String
+  redirectUri: String
+  expiresAt: Int
+  createdAt: Int
+}
+
+# OAuth session storage (persisted for restart survival)
+type OAuthSession @table(database: "yeti-auth") @export {
+  sessionId: String @primaryKey
+  provider: String
+  providerType: String
+  userData: String       # JSON blob of user info from OAuth provider
+  accessToken: String
+  refreshToken: String
+  tokenExpiresAt: Int    # Unix timestamp when access token expires
+  createdAt: Int
+  expiresAt: Int         # Unix timestamp when session expires (TTL)
+}

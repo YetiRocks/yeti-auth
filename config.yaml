@@ -1,0 +1,35 @@
+name: Yeti Auth
+enabled: true
+extension: true
+version: "0.1.0"
+
+schemas:
+  - schema.graphql
+
+dataLoader: data/*.json
+
+resources:
+  - resources/*.rs
+
+# Dependencies for auth functionality (argon2 for password hashing, jsonwebtoken for JWT)
+dependencies:
+  argon2: "0.5"
+  password-hash: { version: "0.5", features: ["std"] }
+  jsonwebtoken: { version: "10.3", features: ["rust_crypto"] }
+
+# Extension-specific config for auth providers
+custom:
+  jwt:
+    secret: "${JWT_SECRET:-development-secret-change-in-production}"
+    access_ttl: 900      # 15 minutes
+    refresh_ttl: 604800  # 7 days
+
+  oauth:
+    # OAuth providers are configured per-application
+    # See documentation for provider-specific configuration
+    github:
+      client_id: "${GITHUB_CLIENT_ID:-}"
+      client_secret: "${GITHUB_CLIENT_SECRET:-}"
+    google:
+      client_id: "${GOOGLE_CLIENT_ID:-}"
+      client_secret: "${GOOGLE_CLIENT_SECRET:-}"

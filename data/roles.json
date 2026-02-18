@@ -1,0 +1,30 @@
+{
+  "database": "auth",
+  "table": "Role",
+  "records": [
+    {
+      "id": "super_user",
+      "name": "Super User",
+      "permissions": "{\"super_user\":true}",
+      "createdAt": 1738800000
+    },
+    {
+      "id": "admin",
+      "name": "Admin",
+      "permissions": "{\"super_user\":true}",
+      "createdAt": 1738800000
+    },
+    {
+      "id": "standard",
+      "name": "Standard User",
+      "permissions": "{\"super_user\":false,\"databases\":{\"data\":{\"tables\":{\"*\":{\"read\":true,\"insert\":true,\"update\":true,\"delete\":false}}}}}",
+      "createdAt": 1738800000
+    },
+    {
+      "id": "viewer",
+      "name": "Viewer",
+      "permissions": "{\"super_user\":false,\"databases\":{\"data\":{\"tables\":{\"*\":{\"read\":true,\"insert\":false,\"update\":false,\"delete\":false}}}}}",
+      "createdAt": 1738800000
+    }
+  ]
+}
