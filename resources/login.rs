@@ -26,7 +26,7 @@
 use std::sync::OnceLock;
 use std::time::Instant;
 use yeti_core::prelude::*;
-use crate::auth::{SHARED_JWT_MANAGER, Permission, verify_password};
+use crate::auth::{Permission, verify_password, get_jwt_manager, TABLE_USER, TABLE_ROLE};
 
 /// Per-username login attempt tracking for rate limiting
 struct LoginAttempts {
@@ -113,7 +113,7 @@ impl Resource for LoginResource {
         }
 
         // Look up user in database
-        let user_table = ctx.get_table("User")?;
+        let user_table = ctx.get_table(TABLE_USER)?;
         let user_record: Option<serde_json::Value> = user_table.get(Some(&username)).await?;
 
         let Some(user) = user_record else {
@@ -126,7 +126,7 @@ impl Resource for LoginResource {
         };
 
         // Check if user is active
-        let active = user.get("active").and_then(|v| v.as_bool()).unwrap_or(false);
+        let active = user.get_bool("active", false);
         if !active {
             if let Some(mut attempts) = tracker.get_mut(&rate_key) {
                 attempts.consecutive_failures += 1;
@@ -137,7 +137,7 @@ impl Resource for LoginResource {
         }
 
         // Verify password
-        let pw_hash = match user.get("passwordHash").and_then(|v| v.as_str()) {
+        let pw_hash = match user.opt_str("passwordHash") {
             Some(h) => h,
             None => {
                 if let Some(mut attempts) = tracker.get_mut(&rate_key) {
@@ -162,9 +162,9 @@ impl Resource for LoginResource {
         }
 
         // Look up role permissions to embed in token
-        let role_id = user.get("roleId").and_then(|v| v.as_str());
+        let role_id = user.opt_str("roleId");
         let permissions = if let Some(role_id) = role_id {
-            let role_table = ctx.get_table("Role")?;
+            let role_table = ctx.get_table(TABLE_ROLE)?;
             let role_record: Option<serde_json::Value> = role_table.get(Some(role_id)).await?;
             role_record
                 .and_then(|r| r.get("permissions")?.as_str().map(|s| s.to_string()))
@@ -174,11 +174,8 @@ impl Resource for LoginResource {
         };
 
         // Generate JWT token pair with embedded permissions
-        let jwt_manager = SHARED_JWT_MANAGER.get()
-            .ok_or_else(|| YetiError::Internal("JWT not initialized".to_string()))?;
-
-        let tokens = jwt_manager.generate_token_pair(&username, role_id, permissions)
-            .map_err(|e| YetiError::Internal(format!("Token generation failed: {:?}", e)))?;
+        let jwt_manager = get_jwt_manager()?;
+        let tokens = jwt_manager.generate_tokens(&username, role_id, permissions)?;
 
         // Reset failure tracking on successful login
         tracker.remove(&rate_key);

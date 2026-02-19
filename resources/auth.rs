@@ -106,7 +106,7 @@ async fn resolve_role(
         AuthIdentity::Basic { username } | AuthIdentity::Jwt { username, .. } => {
             // Look up User record → roleId
             let tables = params.tables().ok()?;
-            let user_table = tables.get("User").ok()?;
+            let user_table = tables.get(TABLE_USER).ok()?;
             let user_record: Option<serde_json::Value> = user_table.get(Some(username.as_str())).await.ok()?;
             let record = user_record?;
             record.get("roleId")?.as_str()?.to_string()
@@ -131,7 +131,7 @@ async fn resolve_role(
 
     // Step 2: Look up role permissions from Role table
     let tables = params.tables().ok()?;
-    let role_table = tables.get("Role").ok()?;
+    let role_table = tables.get(TABLE_ROLE).ok()?;
     let role_record: Option<serde_json::Value> = role_table.get(Some(role_name.as_str())).await.ok()?;
     let role_record = role_record?;
 

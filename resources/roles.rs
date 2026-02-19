@@ -11,6 +11,7 @@
 //! | DELETE | /yeti-auth/roles/{id}     | Delete role (protected roles)   |
 
 use yeti_core::prelude::*;
+use crate::auth::{TABLE_ROLE, TABLE_USER, ROLE_SUPER_USER};
 
 // Type alias for auto-generated lib.rs (compiler expects `Roles` based on filename)
 pub type Roles = RolesResource;
@@ -24,7 +25,7 @@ impl Resource for RolesResource {
     }
 
     get!(_request, ctx, {
-        let role_table = ctx.get_table("Role")?;
+        let role_table = ctx.get_table(TABLE_ROLE)?;
 
         // Single role by path ID
         if let Some(role_id) = ctx.path_id() {
@@ -45,9 +46,9 @@ impl Resource for RolesResource {
     post!(request, ctx, {
         let body = request.json_value()?;
         let id = body.require_str("id")?;
-        let name = body.get("name").and_then(|v| v.as_str()).unwrap_or(&id);
+        let name = body.opt_str("name").unwrap_or(&id);
 
-        let role_table = ctx.get_table("Role")?;
+        let role_table = ctx.get_table(TABLE_ROLE)?;
 
         // Check role doesn't already exist
         if role_table.get_by_id(&id).await?.is_some() {
@@ -78,7 +79,7 @@ impl Resource for RolesResource {
         let role_id = ctx.require_id()?.to_string();
         let body = request.json_value()?;
 
-        let role_table = ctx.get_table("Role")?;
+        let role_table = ctx.get_table(TABLE_ROLE)?;
 
         // Check role exists
         let existing: Option<serde_json::Value> = role_table.get_by_id(&role_id).await?;
@@ -87,7 +88,7 @@ impl Resource for RolesResource {
         };
 
         // Protect super_user: cannot remove super_user privilege
-        if role_id == "super_user" {
+        if role_id == ROLE_SUPER_USER {
             if let Some(perms) = body.get("permissions") {
                 let is_super = perms.get("super_user")
                     .and_then(|v| v.as_bool())
@@ -101,7 +102,7 @@ impl Resource for RolesResource {
         let mut updated = existing;
 
         // Update fields if provided
-        if let Some(name) = body.get("name").and_then(|v| v.as_str()) {
+        if let Some(name) = body.opt_str("name") {
             updated["name"] = json!(name);
         }
         if let Some(permissions) = body.get("permissions") {
@@ -119,18 +120,18 @@ impl Resource for RolesResource {
         let role_id = ctx.require_id()?.to_string();
 
         // Protect super_user role from deletion
-        if role_id == "super_user" {
+        if role_id == ROLE_SUPER_USER {
             return bad_request("Cannot delete the super_user role");
         }
 
-        let role_table = ctx.get_table("Role")?;
+        let role_table = ctx.get_table(TABLE_ROLE)?;
 
         // Check no users reference this role before deleting
-        let user_table = ctx.get_table("User")?;
+        let user_table = ctx.get_table(TABLE_USER)?;
         let users: Vec<serde_json::Value> = user_table.scan_all().await?;
         let referencing_users: Vec<&str> = users.iter()
-            .filter(|u| u.get("roleId").and_then(|v| v.as_str()) == Some(role_id.as_str()))
-            .filter_map(|u| u.get("username").and_then(|v| v.as_str()))
+            .filter(|u| u.opt_str("roleId") == Some(role_id.as_str()))
+            .filter_map(|u| u.opt_str("username"))
             .collect();
 
         if !referencing_users.is_empty() {

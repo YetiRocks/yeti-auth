@@ -6,6 +6,16 @@ use yeti_core::auth::AccessControl;
 use serde::{Deserialize, Serialize};
 
 // ============================================================================
+// Constants
+// ============================================================================
+
+pub const TABLE_USER: &str = "User";
+pub const TABLE_ROLE: &str = "Role";
+pub const TABLE_OAUTH_SESSION: &str = "OAuthSession";
+pub const SESSION_COOKIE: &str = "yeti_session";
+pub const ROLE_SUPER_USER: &str = "super_user";
+
+// ============================================================================
 // OAuth Provider Configuration
 // ============================================================================
 
@@ -136,7 +146,7 @@ impl User {
         Self {
             username,
             role: Role {
-                id: "super_user".to_string(),
+                id: ROLE_SUPER_USER.to_string(),
                 name: "Super User".to_string(),
                 permission: Permission {
                     super_user: true,

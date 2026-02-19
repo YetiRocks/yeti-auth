@@ -19,6 +19,12 @@ fn argon2_instance() -> Argon2<'static> {
     Argon2::new(argon2::Algorithm::Argon2id, argon2::Version::V0x13, params)
 }
 
+/// Hash a password, converting AuthError to YetiError for resource handlers.
+pub fn hash_password_or_err(password: &str) -> yeti_core::error::Result<String> {
+    hash_password(password)
+        .map_err(|e| YetiError::Internal(format!("Password hashing failed: {}", e)))
+}
+
 /// Hash a password using Argon2id (OWASP minimum params)
 pub fn hash_password(password: &str) -> std::result::Result<String, AuthError> {
     let salt = SaltString::generate(&mut password_hash::rand_core::OsRng);
@@ -118,6 +124,14 @@ impl JwtManager {
             refresh_token,
             expires_in: self.access_ttl,
         })
+    }
+
+    /// Generate tokens, converting AuthError to YetiError for resource handlers.
+    pub fn generate_tokens(
+        &self, username: &str, role: Option<&str>, permissions: Option<Permission>,
+    ) -> yeti_core::error::Result<JwtTokenPair> {
+        self.generate_token_pair(username, role, permissions)
+            .map_err(|e| YetiError::Internal(format!("Token generation failed: {:?}", e)))
     }
 
     /// Validate a token and return claims

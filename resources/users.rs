@@ -12,8 +12,7 @@
 
 use yeti_core::prelude::*;
 
-// Re-use hash_password from the auth module
-use crate::auth::hash_password;
+use crate::auth::{hash_password_or_err, TABLE_USER, TABLE_ROLE};
 
 // Type alias for auto-generated lib.rs (compiler expects `Users` based on filename)
 pub type Users = UsersResource;
@@ -27,7 +26,7 @@ impl Resource for UsersResource {
     }
 
     get!(request, ctx, {
-        let user_table = ctx.get_table("User")?;
+        let user_table = ctx.get_table(TABLE_USER)?;
 
         // Single user by path ID
         if let Some(username) = ctx.path_id() {
@@ -58,11 +57,11 @@ impl Resource for UsersResource {
         let body = request.json_value()?;
         let username = body.require_str("username")?;
         let password = body.require_str("password")?;
-        let role_id = body.get("role").and_then(|v| v.as_str()).unwrap_or("viewer");
-        let email = body.get("email").and_then(|v| v.as_str()).unwrap_or("");
+        let role_id = body.opt_str("role").unwrap_or("viewer");
+        let email = body.opt_str("email").unwrap_or("");
 
-        let user_table = ctx.get_table("User")?;
-        let role_table = ctx.get_table("Role")?;
+        let user_table = ctx.get_table(TABLE_USER)?;
+        let role_table = ctx.get_table(TABLE_ROLE)?;
 
         // Check user doesn't already exist
         if user_table.get_by_id(&username).await?.is_some() {
@@ -75,14 +74,13 @@ impl Resource for UsersResource {
         }
 
         // Hash password
-        let password_hash = hash_password(&password)
-            .map_err(|e| YetiError::Internal(format!("Password hashing failed: {}", e)))?;
+        let password_hash = hash_password_or_err(&password)?;
 
         let now = unix_timestamp()? as i64;
         let record = json!({
             "username": username,
             "passwordHash": password_hash,
-            "active": body.get("active").and_then(|v| v.as_bool()).unwrap_or(true),
+            "active": body.get_bool("active", true),
             "roleId": role_id,
             "email": email,
             "createdAt": now,
@@ -101,8 +99,8 @@ impl Resource for UsersResource {
         let username = ctx.require_id()?.to_string();
         let body = request.json_value()?;
 
-        let user_table = ctx.get_table("User")?;
-        let role_table = ctx.get_table("Role")?;
+        let user_table = ctx.get_table(TABLE_USER)?;
+        let role_table = ctx.get_table(TABLE_ROLE)?;
 
         // Check user exists
         let existing: Option<serde_json::Value> = user_table.get_by_id(&username).await?;
@@ -111,7 +109,7 @@ impl Resource for UsersResource {
         };
 
         // If role is being changed, validate it exists
-        if let Some(new_role) = body.get("role").and_then(|v| v.as_str()) {
+        if let Some(new_role) = body.opt_str("role") {
             if role_table.get_by_id(new_role).await?.is_none() {
                 return bad_request(&format!("Role '{}' does not exist", new_role));
             }
@@ -121,18 +119,17 @@ impl Resource for UsersResource {
         let mut updated = existing.clone();
 
         // Update fields if provided
-        if let Some(email) = body.get("email").and_then(|v| v.as_str()) {
+        if let Some(email) = body.opt_str("email") {
             updated["email"] = json!(email);
         }
-        if let Some(role) = body.get("role").and_then(|v| v.as_str()) {
+        if let Some(role) = body.opt_str("role") {
             updated["roleId"] = json!(role);
         }
-        if let Some(active) = body.get("active").and_then(|v| v.as_bool()) {
+        if let Some(active) = body.opt_bool("active") {
             updated["active"] = json!(active);
         }
-        if let Some(password) = body.get("password").and_then(|v| v.as_str()) {
-            let password_hash = hash_password(password)
-                .map_err(|e| YetiError::Internal(format!("Password hashing failed: {}", e)))?;
+        if let Some(password) = body.opt_str("password") {
+            let password_hash = hash_password_or_err(password)?;
             updated["passwordHash"] = json!(password_hash);
         }
         updated["updatedAt"] = json!(now);
@@ -146,7 +143,7 @@ impl Resource for UsersResource {
 
     delete!(_request, ctx, {
         let username = ctx.require_id()?.to_string();
-        let user_table = ctx.get_table("User")?;
+        let user_table = ctx.get_table(TABLE_USER)?;
 
         let deleted = user_table.delete(&username).await?;
         if deleted {

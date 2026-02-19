@@ -8,7 +8,7 @@
 //! `GET /yeti-auth/oauth_user`
 
 use yeti_core::prelude::*;
-use crate::auth::{SHARED_SESSION_CACHE, load_session_from_db};
+use crate::auth::{load_session_from_db, get_session_cookie, get_session_cache};
 
 #[derive(Clone, Default)]
 pub struct OauthUser;
@@ -18,15 +18,10 @@ impl Resource for OauthUser {
 
     fn get(&self, req: Request<Vec<u8>>, ctx: ResourceParams) -> ResourceFuture {
         Box::pin(async move {
-            let session_id = match CookieParser::get_cookie(&req, "yeti_session") {
-                Some(id) => id,
-                None => return unauthorized("No OAuth session"),
+            let Some(session_id) = get_session_cookie(&req) else {
+                return unauthorized("No OAuth session");
             };
-
-            let session_cache = match SHARED_SESSION_CACHE.get() {
-                Some(c) => c,
-                None => return unauthorized("Session store not initialized"),
-            };
+            let session_cache = get_session_cache()?;
 
             // Try in-memory cache first
             if let Some((user, provider, provider_type)) = session_cache.get(&session_id) {

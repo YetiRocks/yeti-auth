@@ -17,8 +17,9 @@
 
 use yeti_core::prelude::*;
 use crate::auth::{
-    SHARED_SESSION_CACHE, SHARED_OAUTH_PROVIDERS, OAuthTokens, SESSION_TTL_SECS,
+    OAuthTokens, SESSION_COOKIE, SESSION_TTL_SECS,
     validate_csrf_state, build_callback_url, persist_session,
+    get_oauth_providers, get_session_cache,
 };
 
 #[derive(Clone, Default)]
@@ -70,22 +71,19 @@ fn exchange_token_and_fetch_user(
         .map_err(|e| format!("Failed to parse token response: {}", e))?;
 
     // Check for error in token response (GitHub returns 200 with error field)
-    if let Some(error) = tokens.get("error").and_then(|v| v.as_str()) {
+    if let Some(error) = tokens.opt_str("error") {
         tracing::warn!("OAuth token error: {}", error);
         return Err(error.to_string());
     }
 
-    let access_token = tokens.get("access_token")
-        .and_then(|v| v.as_str())
+    let access_token = tokens.opt_str("access_token")
         .ok_or_else(|| "No access token in response".to_string())?
         .to_string();
 
-    let refresh_token = tokens.get("refresh_token")
-        .and_then(|v| v.as_str())
+    let refresh_token = tokens.opt_str("refresh_token")
         .map(|s| s.to_string());
 
-    let expires_in = tokens.get("expires_in")
-        .and_then(|v| v.as_u64());
+    let expires_in = tokens.opt_u64("expires_in");
 
     // Fetch user info from provider
     let user_response = client.get(user_info_url)
@@ -104,7 +102,7 @@ fn exchange_token_and_fetch_user(
         .map_err(|e| format!("Failed to parse user info: {}", e))?;
 
     // For GitHub: fetch primary email if not in profile
-    if provider_name == "github" && user.get("email").and_then(|v| v.as_str()).is_none() {
+    if provider_name == "github" && user.opt_str("email").is_none() {
         if let Some(emails_url) = user_emails_url {
             if let Ok(emails_response) = client.get(emails_url)
                 .header("Authorization", format!("Bearer {}", access_token))
@@ -179,8 +177,7 @@ impl Resource for OauthCallback {
             let provider_name = csrf.provider.clone();
 
             // Get provider config
-            let providers = SHARED_OAUTH_PROVIDERS.get()
-                .ok_or_else(|| YetiError::Internal("OAuth not initialized".to_string()))?;
+            let providers = get_oauth_providers()?;
             let provider = match providers.providers.get(&provider_name) {
                 Some(p) => p,
                 None => return internal_error(&format!("Provider '{}' not found", provider_name)),
@@ -212,8 +209,7 @@ impl Resource for OauthCallback {
 
             // Create session with token data for refresh support
             let session_id = generate_id();
-            let session_cache = SHARED_SESSION_CACHE.get()
-                .ok_or_else(|| YetiError::Internal("Session cache not initialized".to_string()))?;
+            let session_cache = get_session_cache()?;
 
             let provider_type = provider.provider_type.clone();
             let expires_at_instant = result.expires_in.map(|secs| {
@@ -243,7 +239,7 @@ impl Resource for OauthCallback {
             session_cache.set_with_tokens(session_id.clone(), result.user, provider_name, provider_type, tokens);
 
             // Build Set-Cookie header and redirect
-            let cookie = CookieBuilder::new("yeti_session", &session_id)
+            let cookie = CookieBuilder::new(SESSION_COOKIE, &session_id)
                 .max_age(SESSION_TTL_SECS)
                 .build();
 

@@ -8,7 +8,7 @@
 //! `GET /yeti-auth/oauth_login?provider=github&redirect_uri=/web-auth-demo/`
 
 use yeti_core::prelude::*;
-use crate::auth::{SHARED_OAUTH_PROVIDERS, store_csrf_state, build_callback_url};
+use crate::auth::{store_csrf_state, build_callback_url, get_oauth_providers};
 
 #[derive(Clone, Default)]
 pub struct OauthLogin;
@@ -30,8 +30,7 @@ impl Resource for OauthLogin {
                 .cloned()
                 .unwrap_or_else(|| "/".to_string());
 
-            let providers = SHARED_OAUTH_PROVIDERS.get()
-                .ok_or_else(|| YetiError::Internal("OAuth not initialized".to_string()))?;
+            let providers = get_oauth_providers()?;
 
             let provider = match providers.providers.get(&provider_name) {
                 Some(p) => p,

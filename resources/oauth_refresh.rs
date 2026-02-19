@@ -10,7 +10,7 @@
 //! Requires an active OAuth session (yeti_session cookie).
 
 use yeti_core::prelude::*;
-use crate::auth::{SHARED_SESSION_CACHE, SHARED_OAUTH_PROVIDERS, OAuthTokens, update_session_tokens_in_db};
+use crate::auth::{OAuthTokens, update_session_tokens_in_db, get_session_cookie, get_session_cache, get_oauth_providers};
 
 #[derive(Clone, Default)]
 pub struct OauthRefresh;
@@ -47,22 +47,20 @@ fn refresh_access_token(
     let tokens: serde_json::Value = response.json()
         .map_err(|e| format!("Failed to parse refresh response: {}", e))?;
 
-    if let Some(error) = tokens.get("error").and_then(|v| v.as_str()) {
+    if let Some(error) = tokens.opt_str("error") {
         return Err(format!("Token refresh error: {}", error));
     }
 
-    let access_token = tokens.get("access_token")
-        .and_then(|v| v.as_str())
+    let access_token = tokens.opt_str("access_token")
         .ok_or_else(|| "No access token in refresh response".to_string())?
         .to_string();
 
     // Refresh token may be rotated (new one returned) or absent (reuse old one)
-    let new_refresh_token = tokens.get("refresh_token")
-        .and_then(|v| v.as_str())
+    let new_refresh_token = tokens.opt_str("refresh_token")
         .map(|s| s.to_string())
         .or_else(|| Some(refresh_token.to_string()));
 
-    let expires_in = tokens.get("expires_in").and_then(|v| v.as_u64());
+    let expires_in = tokens.opt_u64("expires_in");
 
     Ok(OAuthTokens {
         access_token,
@@ -78,15 +76,10 @@ impl Resource for OauthRefresh {
 
     fn post(&self, req: Request<Vec<u8>>, ctx: ResourceParams) -> ResourceFuture {
         Box::pin(async move {
-            let session_id = match CookieParser::get_cookie(&req, "yeti_session") {
-                Some(id) => id,
-                None => return unauthorized("No OAuth session"),
+            let Some(session_id) = get_session_cookie(&req) else {
+                return unauthorized("No OAuth session");
             };
-
-            let session_cache = match SHARED_SESSION_CACHE.get() {
-                Some(c) => c,
-                None => return unauthorized("Session store not initialized"),
-            };
+            let session_cache = get_session_cache()?;
 
             // Get refresh token and provider for this session
             let (refresh_token, provider_key) = match session_cache.get_refresh_info(&session_id) {
@@ -95,8 +88,7 @@ impl Resource for OauthRefresh {
             };
 
             // Look up provider config to get token URL and credentials
-            let providers = SHARED_OAUTH_PROVIDERS.get()
-                .ok_or_else(|| YetiError::Internal("OAuth not initialized".to_string()))?;
+            let providers = get_oauth_providers()?;
             let provider = match providers.providers.get(&provider_key) {
                 Some(p) => p,
                 None => return internal_error(&format!("Provider '{}' not found", provider_key)),

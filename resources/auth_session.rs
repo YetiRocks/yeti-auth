@@ -36,6 +36,33 @@ const CSRF_MAX_AGE: Duration = Duration::from_secs(600);
 pub const SESSION_TTL_SECS: u64 = 604800;
 
 // ============================================================================
+// Shared State Accessors
+// ============================================================================
+
+/// Get the shared JWT manager, or return 500 if not initialized.
+pub fn get_jwt_manager() -> std::result::Result<&'static Arc<JwtManager>, YetiError> {
+    SHARED_JWT_MANAGER.get()
+        .ok_or_else(|| YetiError::Internal("JWT not initialized".to_string()))
+}
+
+/// Get the shared OAuth providers, or return 500 if not initialized.
+pub fn get_oauth_providers() -> std::result::Result<&'static Arc<OAuthProviders>, YetiError> {
+    SHARED_OAUTH_PROVIDERS.get()
+        .ok_or_else(|| YetiError::Internal("OAuth not initialized".to_string()))
+}
+
+/// Get the shared session cache, or return 500 if not initialized.
+pub fn get_session_cache() -> std::result::Result<&'static Arc<SessionCache>, YetiError> {
+    SHARED_SESSION_CACHE.get()
+        .ok_or_else(|| YetiError::Internal("Session cache not initialized".to_string()))
+}
+
+/// Extract session ID from the session cookie.
+pub fn get_session_cookie(req: &Request<Vec<u8>>) -> Option<String> {
+    CookieParser::get_cookie(req, SESSION_COOKIE)
+}
+
+// ============================================================================
 // CSRF State Management
 // ============================================================================
 
@@ -196,7 +223,7 @@ pub async fn persist_session(
     tokens: &OAuthTokens,
     ttl_secs: u64,
 ) -> std::result::Result<(), String> {
-    let session_table = tables.get("OAuthSession")
+    let session_table = tables.get(TABLE_OAUTH_SESSION)
         .map_err(|e| format!("OAuthSession table not found: {}", e))?;
 
     let now = std::time::SystemTime::now()
@@ -234,7 +261,7 @@ pub async fn load_session_from_db(
     tables: &Tables,
     session_id: &str,
 ) -> Option<(serde_json::Value, String, String, Option<OAuthTokens>)> {
-    let session_table = tables.get("OAuthSession").ok()?;
+    let session_table = tables.get(TABLE_OAUTH_SESSION).ok()?;
     let record: Option<serde_json::Value> = session_table.get(Some(session_id)).await.ok()?;
     let record = record?;
 
@@ -289,7 +316,7 @@ pub async fn delete_session_from_db(
     tables: &Tables,
     session_id: &str,
 ) {
-    if let Ok(session_table) = tables.get("OAuthSession") {
+    if let Ok(session_table) = tables.get(TABLE_OAUTH_SESSION) {
         let _ = session_table.delete(session_id).await;
     }
 }
@@ -300,7 +327,7 @@ pub async fn update_session_tokens_in_db(
     session_id: &str,
     tokens: &OAuthTokens,
 ) {
-    if let Ok(session_table) = tables.get("OAuthSession") {
+    if let Ok(session_table) = tables.get(TABLE_OAUTH_SESSION) {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()

@@ -73,7 +73,7 @@ impl AuthProvider for BasicAuthProvider {
         // Query User table directly via BackendManager
         let backend = backend.ok_or(AuthError::InvalidCredentials)?;
         let user_table = backend
-            .get_backend_for_table("User")
+            .get_backend_for_table(TABLE_USER)
             .map_err(|_| AuthError::InvalidCredentials)?;
 
         let user_record: Option<serde_json::Value> = TableExt::get(
@@ -88,7 +88,7 @@ impl AuthProvider for BasicAuthProvider {
         };
 
         // Check if user is active
-        let active = user.get("active").and_then(|v| v.as_bool()).unwrap_or(false);
+        let active = user.get_bool("active", false);
         if !active {
             return Err(AuthError::UserInactive);
         }
@@ -213,7 +213,7 @@ impl OAuthAuthProvider {
     pub fn new(session_cache: Arc<SessionCache>) -> Self {
         Self {
             session_cache,
-            session_cookie_name: "yeti_session".to_string(),
+            session_cookie_name: SESSION_COOKIE.to_string(),
         }
     }
 }
@@ -232,8 +232,7 @@ impl AuthProvider for OAuthAuthProvider {
 
         // Try in-memory cache first
         if let Some((user, _provider_key, provider_type)) = self.session_cache.get(session_id) {
-            let email = user.get("email")
-                .and_then(|v| v.as_str())
+            let email = user.opt_str("email")
                 .map(|s| s.to_string());
             return Ok(Some(AuthIdentity::OAuth {
                 email,
@@ -244,7 +243,7 @@ impl AuthProvider for OAuthAuthProvider {
 
         // Cache miss — try the database (survives restarts)
         if let Some(bm) = backend {
-            if let Ok(session_backend) = bm.get_backend_for_table("OAuthSession") {
+            if let Ok(session_backend) = bm.get_backend_for_table(TABLE_OAUTH_SESSION) {
                 let record: Option<serde_json::Value> = TableExt::get(
                     session_backend.as_ref(), session_id,
                 ).await.unwrap_or(None);
@@ -255,16 +254,16 @@ impl AuthProvider for OAuthAuthProvider {
                         .duration_since(std::time::UNIX_EPOCH)
                         .unwrap_or_default()
                         .as_secs();
-                    let expires_at = record.get("expiresAt").and_then(|v| v.as_u64()).unwrap_or(0);
+                    let expires_at = record.get_u64("expiresAt", 0);
                     if expires_at > 0 && now > expires_at {
                         let _ = TableExt::delete(session_backend.as_ref(), session_id).await;
                         return Ok(None);
                     }
 
-                    if let Some(user_data_str) = record.get("userData").and_then(|v| v.as_str()) {
+                    if let Some(user_data_str) = record.opt_str("userData") {
                         if let Ok(user) = serde_json::from_str::<serde_json::Value>(user_data_str) {
-                            let provider = record.get("provider").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                            let provider_type = record.get("providerType").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                            let provider = record.get("provider").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+                            let provider_type = record.get("providerType").and_then(|v| v.as_str()).unwrap_or_default().to_string();
 
                             // Re-populate in-memory cache
                             self.session_cache.set(
