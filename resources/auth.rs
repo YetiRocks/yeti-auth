@@ -7,7 +7,6 @@
 //! (no in-memory caches). RocksDB reads are <1ms so per-request lookups
 //! have negligible overhead.
 
-use std::collections::HashMap;
 use std::hash::{Hash, Hasher, DefaultHasher};
 use std::sync::{Arc, OnceLock};
 use std::sync::atomic::{AtomicU64, Ordering};
