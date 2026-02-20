@@ -10,15 +10,16 @@ import { OAuthPage } from './components/OAuthPage'
 
 type Page = 'dashboard' | 'users' | 'roles' | 'oauth'
 
+const BASE = '/yeti-auth'
 const VALID_PAGES: Page[] = ['dashboard', 'users', 'roles', 'oauth']
 
-function getPageFromHash(): Page {
-  const hash = window.location.hash.replace('#', '')
-  return VALID_PAGES.includes(hash as Page) ? (hash as Page) : 'dashboard'
+function getPageFromPath(): Page {
+  const path = window.location.pathname.replace(BASE, '').replace(/^\//, '')
+  return VALID_PAGES.includes(path as Page) ? (path as Page) : 'dashboard'
 }
 
 function App() {
-  const [page, setPage] = useState<Page>(getPageFromHash)
+  const [page, setPage] = useState<Page>(getPageFromPath)
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
 
   const showToast = useCallback((message: string, type: 'success' | 'error' = 'success') => {
@@ -27,14 +28,14 @@ function App() {
   }, [])
 
   const navigate = useCallback((p: Page) => {
-    window.location.hash = p
+    window.history.pushState(null, '', `${BASE}/${p}`)
     setPage(p)
   }, [])
 
   useEffect(() => {
-    const onHashChange = () => setPage(getPageFromHash())
-    window.addEventListener('hashchange', onHashChange)
-    return () => window.removeEventListener('hashchange', onHashChange)
+    const onPopState = () => setPage(getPageFromPath())
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
   }, [])
 
   return (
