@@ -10,16 +10,15 @@
 //!
 //! # Note
 //!
-//! Uses `reqwest::blocking::Client` directly (not async reqwest or spawn_blocking)
-//! because dynamically loaded plugins have a separate copy of Tokio's TLS and
-//! cannot access the host's runtime handle. The blocking client creates its own
-//! internal mini-runtime which works correctly in this context.
+//! Uses `std::process::Command` to call curl for outbound HTTP requests.
+//! `reqwest::blocking::Client` crashes in dylib plugins because it creates
+//! an internal tokio runtime that conflicts with the host runtime boundary.
 
 use yeti_core::prelude::*;
 use crate::auth::{
     OAuthTokens, SESSION_COOKIE, SESSION_TTL_SECS,
     validate_csrf_state, build_callback_url, persist_session,
-    get_oauth_providers, get_session_cache,
+    get_oauth_providers, get_session_cache, curl_request,
 };
 
 #[derive(Clone, Default)]
@@ -43,10 +42,7 @@ fn exchange_token_and_fetch_user(
     user_emails_url: Option<&str>,
     provider_name: &str,
 ) -> std::result::Result<OAuthExchangeResult, String> {
-    let client = reqwest::blocking::Client::new();
-
-    // Exchange authorization code for access token
-    // Use form-encoded body (required by Google, Microsoft; accepted by GitHub)
+    // Exchange authorization code for access token (form-encoded POST)
     let form_body = format!(
         "grant_type=authorization_code&client_id={}&client_secret={}&code={}&redirect_uri={}",
         urlencoding::encode(client_id),
@@ -54,25 +50,27 @@ fn exchange_token_and_fetch_user(
         urlencoding::encode(code),
         urlencoding::encode(callback_url),
     );
-    let token_response = client.post(token_url)
-        .header("Accept", "application/json")
-        .header("Content-Type", "application/x-www-form-urlencoded")
-        .body(form_body)
-        .send()
-        .map_err(|e| format!("Token exchange failed: {}", e))?;
 
-    if !token_response.status().is_success() {
-        let error_text = token_response.text().unwrap_or_default();
-        tracing::warn!("OAuth token exchange failed: {}", error_text);
+    let token_response = curl_request(
+        "POST",
+        token_url,
+        &[
+            ("Accept", "application/json"),
+            ("Content-Type", "application/x-www-form-urlencoded"),
+        ],
+        Some(&form_body),
+    )?;
+
+    if !token_response.is_success() {
+        eprintln!("[yeti-auth] OAuth token exchange failed ({}): {}", token_response.status, token_response.body);
         return Err("Token exchange failed".to_string());
     }
 
-    let tokens: serde_json::Value = token_response.json()
-        .map_err(|e| format!("Failed to parse token response: {}", e))?;
+    let tokens = token_response.json()?;
 
     // Check for error in token response (GitHub returns 200 with error field)
     if let Some(error) = tokens.opt_str("error") {
-        tracing::warn!("OAuth token error: {}", error);
+        eprintln!("[yeti-auth] OAuth token error: {}", error);
         return Err(error.to_string());
     }
 
@@ -86,31 +84,38 @@ fn exchange_token_and_fetch_user(
     let expires_in = tokens.opt_u64("expires_in");
 
     // Fetch user info from provider
-    let user_response = client.get(user_info_url)
-        .header("Authorization", format!("Bearer {}", access_token))
-        .header("User-Agent", "Yeti-Core")
-        .send()
-        .map_err(|e| format!("User info request failed: {}", e))?;
+    let bearer = format!("Bearer {}", access_token);
+    let user_response = curl_request(
+        "GET",
+        user_info_url,
+        &[
+            ("Authorization", &bearer),
+            ("User-Agent", "Yeti-Core"),
+        ],
+        None,
+    )?;
 
-    if !user_response.status().is_success() {
-        let error_text = user_response.text().unwrap_or_default();
-        tracing::warn!("OAuth user info failed: {}", error_text);
+    if !user_response.is_success() {
+        eprintln!("[yeti-auth] OAuth user info failed ({}): {}", user_response.status, user_response.body);
         return Err("Failed to fetch user info".to_string());
     }
 
-    let mut user: serde_json::Value = user_response.json()
-        .map_err(|e| format!("Failed to parse user info: {}", e))?;
+    let mut user = user_response.json()?;
 
     // For GitHub: fetch primary email if not in profile
     if provider_name == "github" && user.opt_str("email").is_none() {
         if let Some(emails_url) = user_emails_url {
-            if let Ok(emails_response) = client.get(emails_url)
-                .header("Authorization", format!("Bearer {}", access_token))
-                .header("User-Agent", "Yeti-Core")
-                .send()
-            {
-                if emails_response.status().is_success() {
-                    if let Ok(emails) = emails_response.json::<Vec<serde_json::Value>>() {
+            if let Ok(emails_response) = curl_request(
+                "GET",
+                emails_url,
+                &[
+                    ("Authorization", &bearer),
+                    ("User-Agent", "Yeti-Core"),
+                ],
+                None,
+            ) {
+                if emails_response.is_success() {
+                    if let Ok(emails) = serde_json::from_str::<Vec<serde_json::Value>>(&emails_response.body) {
                         let primary_email = emails.iter()
                             .find(|e| {
                                 e.get("primary").and_then(|v| v.as_bool()).unwrap_or(false)
@@ -185,7 +190,9 @@ impl Resource for OauthCallback {
 
             let callback_url = build_callback_url(&req);
 
-            // Perform blocking HTTP calls (see module-level note on why blocking)
+            eprintln!("[yeti-auth] OAuth callback: provider={}, redirect={}", provider_name, app_redirect);
+
+            // Perform HTTP calls via curl subprocess (reqwest::blocking crashes in dylib)
             let result = match exchange_token_and_fetch_user(
                 &provider.token_url,
                 &provider.client_id,
@@ -196,8 +203,12 @@ impl Resource for OauthCallback {
                 provider.user_emails_url.as_deref(),
                 &provider_name,
             ) {
-                Ok(r) => r,
+                Ok(r) => {
+                    eprintln!("[yeti-auth] OAuth token exchange succeeded for {}", provider_name);
+                    r
+                }
                 Err(error_msg) => {
+                    eprintln!("[yeti-auth] OAuth token exchange FAILED: {}", error_msg);
                     let redirect = format!(
                         "{}?error={}",
                         app_redirect,
@@ -236,15 +247,19 @@ impl Resource for OauthCallback {
                 }
             }
 
-            session_cache.set_with_tokens(session_id.clone(), result.user, provider_name, provider_type, tokens);
+            session_cache.set_with_tokens(session_id.clone(), result.user, provider_name.clone(), provider_type, tokens);
 
             // Build Set-Cookie header and redirect
             let cookie = CookieBuilder::new(SESSION_COOKIE, &session_id)
                 .max_age(SESSION_TTL_SECS)
                 .build();
 
-            reply().redirect(&app_redirect, Some(302))
-                .add_header("Set-Cookie", &cookie)
+            eprintln!("[yeti-auth] OAuth session created: id={}..., provider={}, redirecting to {}",
+                &session_id[..16], provider_name, app_redirect);
+
+            reply()
+                .header("set-cookie", &cookie)
+                .redirect(&app_redirect, Some(302))
         })
     }
 }

@@ -11,6 +11,11 @@ dataLoader: data/*.json
 resources:
   - resources/*.rs
 
+static_files:
+  path: web
+  route: /
+  index: index.html
+
 # Dependencies for auth functionality (argon2 for password hashing, jsonwebtoken for JWT)
 dependencies:
   argon2: "0.5"

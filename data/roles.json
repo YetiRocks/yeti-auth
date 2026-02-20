@@ -23,7 +23,7 @@
     {
       "id": "viewer",
       "name": "Viewer",
-      "permissions": "{\"super_user\":false,\"databases\":{\"data\":{\"tables\":{\"*\":{\"read\":true,\"insert\":false,\"update\":false,\"delete\":false}}}}}",
+      "permissions": "{\"super_user\":false,\"databases\":{\"data\":{\"tables\":{\"*\":{\"read\":true,\"insert\":false,\"update\":false,\"delete\":false}}},\"web-auth-demo\":{\"tables\":{\"Employee\":{\"read\":true,\"insert\":false,\"update\":false,\"delete\":false,\"attribute_permissions\":{\"salary\":{\"read\":false,\"write\":false},\"ssn\":{\"read\":false,\"write\":false},\"homeAddress\":{\"read\":false,\"write\":false},\"personalEmail\":{\"read\":false,\"write\":false}}}}}}}",
       "createdAt": 1738800000
     }
   ]

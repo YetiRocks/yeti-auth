@@ -1,4 +1,4 @@
-//! Auth session management — Shared statics, CSRF, session cache, DB persistence
+//! Auth session management — Shared statics, CSRF, session cache, DB persistence, HTTP helpers
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
@@ -6,6 +6,74 @@ use yeti_core::prelude::*;
 
 use crate::auth_types::*;
 use crate::auth_crypto::JwtManager;
+
+// ============================================================================
+// HTTP Helpers (curl subprocess — reqwest::blocking crashes in dylib context)
+// ============================================================================
+
+/// Response from a curl HTTP request.
+pub struct CurlResponse {
+    pub status: u16,
+    pub body: String,
+}
+
+impl CurlResponse {
+    pub fn is_success(&self) -> bool {
+        (200..300).contains(&self.status)
+    }
+
+    /// Parse body as JSON.
+    pub fn json(&self) -> std::result::Result<serde_json::Value, String> {
+        serde_json::from_str(&self.body)
+            .map_err(|e| format!("Failed to parse JSON: {} (body: {})", e, &self.body[..self.body.len().min(200)]))
+    }
+}
+
+/// Execute an HTTP request via curl subprocess.
+///
+/// `reqwest::blocking::Client` crashes in dylib plugins because it creates
+/// an internal tokio runtime that conflicts with the host runtime at the dylib
+/// boundary. Using `std::process::Command` to call curl avoids this entirely.
+pub fn curl_request(
+    method: &str,
+    url: &str,
+    headers: &[(&str, &str)],
+    body: Option<&str>,
+) -> std::result::Result<CurlResponse, String> {
+    let mut cmd = std::process::Command::new("curl");
+    cmd.arg("-s")  // silent
+       .arg("-S")  // show errors
+       .arg("--max-time").arg("30")  // 30s timeout
+       .arg("-w").arg("\n__YETI_HTTP_STATUS__%{http_code}")
+       .arg("-X").arg(method);
+
+    for (key, value) in headers {
+        cmd.arg("-H").arg(format!("{}: {}", key, value));
+    }
+
+    if let Some(b) = body {
+        cmd.arg("-d").arg(b);
+    }
+
+    cmd.arg(url);
+
+    let output = cmd.output()
+        .map_err(|e| format!("Failed to execute curl: {}", e))?;
+
+    let raw = String::from_utf8(output.stdout)
+        .map_err(|e| format!("Invalid UTF-8 in response: {}", e))?;
+
+    // Split body and status code using our sentinel
+    if let Some(pos) = raw.rfind("\n__YETI_HTTP_STATUS__") {
+        let body = raw[..pos].to_string();
+        let status_str = &raw[pos + 21..]; // length of "\n__YETI_HTTP_STATUS__"
+        let status = status_str.trim().parse::<u16>().unwrap_or(500);
+        Ok(CurlResponse { status, body })
+    } else {
+        // Fallback: no status marker found (shouldn't happen)
+        Ok(CurlResponse { status: 500, body: raw })
+    }
+}
 
 // ============================================================================
 // Shared State (accessible by OAuth flow resources in sibling modules)

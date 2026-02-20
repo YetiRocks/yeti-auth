@@ -10,21 +10,19 @@
 //! Requires an active OAuth session (yeti_session cookie).
 
 use yeti_core::prelude::*;
-use crate::auth::{OAuthTokens, update_session_tokens_in_db, get_session_cookie, get_session_cache, get_oauth_providers};
+use crate::auth::{OAuthTokens, update_session_tokens_in_db, get_session_cookie, get_session_cache, get_oauth_providers, curl_request};
 
 #[derive(Clone, Default)]
 pub struct OauthRefresh;
 
-/// Perform the token refresh using the blocking reqwest client.
-/// Same approach as oauth_callback.rs — blocking is required in dylib plugins.
+/// Perform the token refresh via curl subprocess.
+/// reqwest::blocking crashes in dylib plugins — use curl instead.
 fn refresh_access_token(
     token_url: &str,
     client_id: &str,
     client_secret: &str,
     refresh_token: &str,
 ) -> std::result::Result<OAuthTokens, String> {
-    let client = reqwest::blocking::Client::new();
-
     let form_body = format!(
         "grant_type=refresh_token&client_id={}&client_secret={}&refresh_token={}",
         urlencoding::encode(client_id),
@@ -32,20 +30,21 @@ fn refresh_access_token(
         urlencoding::encode(refresh_token),
     );
 
-    let response = client.post(token_url)
-        .header("Accept", "application/json")
-        .header("Content-Type", "application/x-www-form-urlencoded")
-        .body(form_body)
-        .send()
-        .map_err(|e| format!("Token refresh request failed: {}", e))?;
+    let response = curl_request(
+        "POST",
+        token_url,
+        &[
+            ("Accept", "application/json"),
+            ("Content-Type", "application/x-www-form-urlencoded"),
+        ],
+        Some(&form_body),
+    )?;
 
-    if !response.status().is_success() {
-        let error_text = response.text().unwrap_or_default();
-        return Err(format!("Token refresh failed: {}", error_text));
+    if !response.is_success() {
+        return Err(format!("Token refresh failed ({}): {}", response.status, response.body));
     }
 
-    let tokens: serde_json::Value = response.json()
-        .map_err(|e| format!("Failed to parse refresh response: {}", e))?;
+    let tokens = response.json()?;
 
     if let Some(error) = tokens.opt_str("error") {
         return Err(format!("Token refresh error: {}", error));
@@ -94,7 +93,7 @@ impl Resource for OauthRefresh {
                 None => return internal_error(&format!("Provider '{}' not found", provider_key)),
             };
 
-            // Perform the refresh
+            // Perform the refresh via curl subprocess
             match refresh_access_token(
                 &provider.token_url,
                 &provider.client_id,
