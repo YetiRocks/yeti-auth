@@ -88,7 +88,7 @@ impl Resource for UsersResource {
         });
 
         user_table.put(&username, record.clone()).await?;
-        eprintln!("[yeti-auth] USER_CREATED: username={}", username);
+        yeti_log!(info, "USER_CREATED: username={}", username);
 
         let mut response = record;
         strip_password_hash(&mut response);
@@ -135,7 +135,7 @@ impl Resource for UsersResource {
         updated["updatedAt"] = json!(now);
 
         user_table.put(&username, updated.clone()).await?;
-        eprintln!("[yeti-auth] USER_UPDATED: username={}", username);
+        yeti_log!(info, "USER_UPDATED: username={}", username);
 
         strip_password_hash(&mut updated);
         reply().json(updated)
@@ -147,7 +147,7 @@ impl Resource for UsersResource {
 
         let deleted = user_table.delete(&username).await?;
         if deleted {
-            eprintln!("[yeti-auth] USER_DELETED: username={}", username);
+            yeti_log!(info, "USER_DELETED: username={}", username);
             reply().json(json!({"deleted": true, "username": username}))
         } else {
             not_found(&format!("User '{}' not found", username))

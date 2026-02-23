@@ -71,7 +71,7 @@ impl Resource for RolesResource {
         });
 
         role_table.put(&id, record.clone()).await?;
-        eprintln!("[yeti-auth] ROLE_CREATED: role_id={}", id);
+        yeti_log!(info, "ROLE_CREATED: role_id={}", id);
         reply().code(201).json(enrich_role(record))
     });
 
@@ -112,7 +112,7 @@ impl Resource for RolesResource {
         }
 
         role_table.put(&role_id, updated.clone()).await?;
-        eprintln!("[yeti-auth] ROLE_UPDATED: role_id={}", role_id);
+        yeti_log!(info, "ROLE_UPDATED: role_id={}", role_id);
         reply().json(enrich_role(updated))
     });
 
@@ -144,7 +144,7 @@ impl Resource for RolesResource {
 
         let deleted = role_table.delete(&role_id).await?;
         if deleted {
-            eprintln!("[yeti-auth] ROLE_DELETED: role_id={}", role_id);
+            yeti_log!(info, "ROLE_DELETED: role_id={}", role_id);
             reply().json(json!({"deleted": true, "id": role_id}))
         } else {
             not_found(&format!("Role '{}' not found", role_id))

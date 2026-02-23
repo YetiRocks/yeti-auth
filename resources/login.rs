@@ -77,7 +77,7 @@ impl Resource for LoginResource {
         if let Some(attempts) = tracker.get(&rate_key) {
             let elapsed = attempts.first_attempt.elapsed();
             if elapsed < std::time::Duration::from_secs(60) && attempts.count >= MAX_ATTEMPTS_PER_MINUTE {
-                eprintln!("[yeti-auth] LOGIN_RATE_LIMITED: username={}", username);
+                yeti_log!(warn, "LOGIN_RATE_LIMITED: username={}", username);
                 return reply().status(429).json(json!({
                     "error": "Too many login attempts. Please try again later."
                 }));
@@ -87,7 +87,7 @@ impl Resource for LoginResource {
                 if let Some(last) = attempts.last_failure {
                     let backoff_secs = 2u64.pow((attempts.consecutive_failures - BACKOFF_THRESHOLD).min(4));
                     if last.elapsed() < std::time::Duration::from_secs(backoff_secs) {
-                        eprintln!("[yeti-auth] LOGIN_BACKOFF: username={} backoff={}s", username, backoff_secs);
+                        yeti_log!(warn, "LOGIN_BACKOFF: username={} backoff={}s", username, backoff_secs);
                         return reply().status(429).json(json!({
                             "error": "Too many failed attempts. Please wait before trying again."
                         }));
@@ -121,7 +121,7 @@ impl Resource for LoginResource {
                 attempts.consecutive_failures += 1;
                 attempts.last_failure = Some(Instant::now());
             }
-            eprintln!("[yeti-auth] LOGIN_FAILED: username={} reason=user_not_found", username);
+            yeti_log!(warn, "LOGIN_FAILED: username={} reason=user_not_found", username);
             return unauthorized("Invalid username or password");
         };
 
@@ -132,7 +132,7 @@ impl Resource for LoginResource {
                 attempts.consecutive_failures += 1;
                 attempts.last_failure = Some(Instant::now());
             }
-            eprintln!("[yeti-auth] LOGIN_FAILED: username={} reason=account_disabled", username);
+            yeti_log!(warn, "LOGIN_FAILED: username={} reason=account_disabled", username);
             return unauthorized("Account is disabled");
         }
 
@@ -144,7 +144,7 @@ impl Resource for LoginResource {
                     attempts.consecutive_failures += 1;
                     attempts.last_failure = Some(Instant::now());
                 }
-                eprintln!("[yeti-auth] LOGIN_FAILED: username={} reason=no_password_hash", username);
+                yeti_log!(warn, "LOGIN_FAILED: username={} reason=no_password_hash", username);
                 return unauthorized("Invalid username or password");
             }
         };
@@ -156,7 +156,7 @@ impl Resource for LoginResource {
                     attempts.consecutive_failures += 1;
                     attempts.last_failure = Some(Instant::now());
                 }
-                eprintln!("[yeti-auth] LOGIN_FAILED: username={} reason=invalid_password", username);
+                yeti_log!(warn, "LOGIN_FAILED: username={} reason=invalid_password", username);
                 return unauthorized("Invalid username or password");
             }
         }
@@ -180,7 +180,7 @@ impl Resource for LoginResource {
         // Reset failure tracking on successful login
         tracker.remove(&rate_key);
 
-        eprintln!("[yeti-auth] LOGIN_SUCCESS: username={}", username);
+        yeti_log!(info, "LOGIN_SUCCESS: username={}", username);
         reply().json(json!({
             "access_token": tokens.access_token,
             "refresh_token": tokens.refresh_token,

@@ -1,5 +1,6 @@
 //! SSRF validation for OAuth provider URLs
 
+use yeti_core::prelude::*;
 use crate::auth_types::OAuthProviderConfig;
 
 // ============================================================================
@@ -30,7 +31,7 @@ fn validate_provider_url(url: &str, label: &str) -> std::result::Result<(), Stri
         let is_dev = std::env::var("YETI_ENV")
             .unwrap_or_else(|_| "development".to_string()) == "development";
         if is_dev {
-            eprintln!("[yeti-auth] WARNING: {} URL '{}' uses {} (non-HTTPS) — only acceptable in development", label, url, scheme);
+            yeti_log!(warn, "WARNING: {} URL '{}' uses {} (non-HTTPS) — only acceptable in development", label, url, scheme);
         } else {
             return Err(format!("{}: URL '{}' must use HTTPS in production", label, url));
         }

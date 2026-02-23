@@ -348,8 +348,8 @@ impl AuthExtension {
         for name in &provider_names {
             if let Some(config) = providers.get(name) {
                 if let Err(e) = validate_provider_urls(name, config) {
-                    eprintln!("[yeti-auth] SSRF validation failed: {}", e);
-                    eprintln!("[yeti-auth] Removing provider '{}' due to unsafe URL configuration", name);
+                    yeti_log!(warn, "SSRF validation failed: {}", e);
+                    yeti_log!(warn, "Removing provider '{}' due to unsafe URL configuration", name);
                     providers.remove(name);
                 }
             }
@@ -390,15 +390,15 @@ impl Extension for AuthExtension {
     }
 
     fn initialize(&self) -> Result<()> {
-        eprintln!("[yeti-auth] Initializing auth extension");
-        eprintln!("[yeti-auth] Basic auth: enabled");
-        eprintln!("[yeti-auth] JWT auth: enabled");
+        yeti_log!(info, "Initializing auth extension");
+        yeti_log!(info, "Basic auth: enabled");
+        yeti_log!(info, "JWT auth: enabled");
         if let Some(providers) = SHARED_OAUTH_PROVIDERS.get() {
             let names: Vec<&str> = providers.providers.keys().map(|s| s.as_str()).collect();
             if names.is_empty() {
-                eprintln!("[yeti-auth] OAuth: no providers configured (set GITHUB_CLIENT_ID etc.)");
+                yeti_log!(info, "OAuth: no providers configured (set GITHUB_CLIENT_ID etc.)");
             } else {
-                eprintln!("[yeti-auth] OAuth: providers configured: {:?}", names);
+                yeti_log!(info, "OAuth: providers configured: {:?}", names);
             }
         }
         Ok(())

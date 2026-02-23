@@ -62,7 +62,7 @@ fn exchange_token_and_fetch_user(
     )?;
 
     if !token_response.is_success() {
-        eprintln!("[yeti-auth] OAuth token exchange failed ({}): {}", token_response.status, token_response.body);
+        yeti_log!(error, "OAuth token exchange failed ({}): {}", token_response.status, token_response.body);
         return Err("Token exchange failed".to_string());
     }
 
@@ -70,7 +70,7 @@ fn exchange_token_and_fetch_user(
 
     // Check for error in token response (GitHub returns 200 with error field)
     if let Some(error) = tokens.opt_str("error") {
-        eprintln!("[yeti-auth] OAuth token error: {}", error);
+        yeti_log!(error, "OAuth token error: {}", error);
         return Err(error.to_string());
     }
 
@@ -96,7 +96,7 @@ fn exchange_token_and_fetch_user(
     )?;
 
     if !user_response.is_success() {
-        eprintln!("[yeti-auth] OAuth user info failed ({}): {}", user_response.status, user_response.body);
+        yeti_log!(error, "OAuth user info failed ({}): {}", user_response.status, user_response.body);
         return Err("Failed to fetch user info".to_string());
     }
 
@@ -190,7 +190,7 @@ impl Resource for OauthCallback {
 
             let callback_url = build_callback_url(&req);
 
-            eprintln!("[yeti-auth] OAuth callback: provider={}, redirect={}", provider_name, app_redirect);
+            yeti_log!(debug, "OAuth callback: provider={}, redirect={}", provider_name, app_redirect);
 
             // Perform HTTP calls via curl subprocess (reqwest::blocking crashes in dylib)
             let result = match exchange_token_and_fetch_user(
@@ -204,11 +204,11 @@ impl Resource for OauthCallback {
                 &provider_name,
             ) {
                 Ok(r) => {
-                    eprintln!("[yeti-auth] OAuth token exchange succeeded for {}", provider_name);
+                    yeti_log!(info, "OAuth token exchange succeeded for {}", provider_name);
                     r
                 }
                 Err(error_msg) => {
-                    eprintln!("[yeti-auth] OAuth token exchange FAILED: {}", error_msg);
+                    yeti_log!(error, "OAuth token exchange FAILED: {}", error_msg);
                     let redirect = format!(
                         "{}?error={}",
                         app_redirect,
@@ -243,7 +243,7 @@ impl Resource for OauthCallback {
                     &tables, &session_id, &result.user, &provider_name,
                     &provider_type, &db_tokens, SESSION_TTL_SECS,
                 ).await {
-                    eprintln!("[yeti-auth] Warning: failed to persist session to DB: {}", e);
+                    yeti_log!(warn, "Failed to persist session to DB: {}", e);
                 }
             }
 
@@ -254,7 +254,7 @@ impl Resource for OauthCallback {
                 .max_age(SESSION_TTL_SECS)
                 .build();
 
-            eprintln!("[yeti-auth] OAuth session created: id={}..., provider={}, redirecting to {}",
+            yeti_log!(info, "OAuth session created: id={}..., provider={}, redirecting to {}",
                 &session_id[..16], provider_name, app_redirect);
 
             reply()
