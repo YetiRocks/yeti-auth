@@ -23,6 +23,22 @@ use crate::auth_session::*;
 use crate::auth_providers::*;
 use crate::auth_ssrf::*;
 
+/// Get a Tables accessor that can reach the auth DB (User/Role tables).
+///
+/// The current app's BackendManager may only have the app's own tables.
+/// Falls back to SHARED_AUTH_BACKEND (the yeti-auth BackendManager) so that
+/// middleware running for other apps can still look up User and Role records.
+fn auth_tables(params: &ResourceParams) -> Option<Tables> {
+    // Try the current app's tables first
+    if let Ok(t) = params.tables() {
+        if t.get(TABLE_ROLE).is_ok() {
+            return Some(t);
+        }
+    }
+    // Fall back to the stored yeti-auth backend
+    SHARED_AUTH_BACKEND.get().map(|bm| Tables::new(bm.clone()))
+}
+
 // Backward-compatible re-exports — sibling modules import via `use crate::auth::*`
 pub use crate::auth_types::*;
 pub use crate::auth_crypto::*;
@@ -105,16 +121,21 @@ async fn resolve_role(
     let role_name = match identity {
         AuthIdentity::Basic { username } | AuthIdentity::Jwt { username, .. } => {
             // Look up User record → roleId
-            let tables = params.tables().ok()?;
+            let tables = auth_tables(params)?;
             let user_table = tables.get(TABLE_USER).ok()?;
             let user_record: Option<serde_json::Value> = user_table.get(Some(username.as_str())).await.ok()?;
             let record = user_record?;
             record.get("roleId")?.as_str()?.to_string()
         }
         AuthIdentity::OAuth { provider, email, claims, .. } => {
+            yeti_log!(debug, "resolve_role: OAuth provider={}, email={:?}", provider, email);
             // Use extension config for OAuth role mapping
-            let ext_config = params.extension_config("yeti-auth")?;
-            let oauth_config = ext_config.get("oauth")?;
+            let ext_config = params.extension_config("yeti-auth");
+            yeti_log!(debug, "resolve_role: ext_config found={}", ext_config.is_some());
+            let ext_config = ext_config?;
+            let oauth_config = ext_config.get("oauth");
+            yeti_log!(debug, "resolve_role: oauth_config found={}", oauth_config.is_some());
+            let oauth_config = oauth_config?;
 
             // 1. Check role_claim (direct claim → role)
             if let Some(claim_name) = oauth_config.get("role_claim").and_then(|v| v.as_str()) {
@@ -129,10 +150,13 @@ async fn resolve_role(
         }
     };
 
+    yeti_log!(debug, "resolve_role: role_name={}", role_name);
+
     // Step 2: Look up role permissions from Role table
-    let tables = params.tables().ok()?;
+    let tables = auth_tables(params)?;
     let role_table = tables.get(TABLE_ROLE).ok()?;
     let role_record: Option<serde_json::Value> = role_table.get(Some(role_name.as_str())).await.ok()?;
+    yeti_log!(debug, "resolve_role: role_record found={}", role_record.is_some());
     let role_record = role_record?;
 
     // Parse permissions from the Role record (stored as JSON string)
@@ -206,11 +230,23 @@ impl RequestMiddleware for AuthMiddleware {
         // Cleanup expired sessions periodically
         self.session_cache.cleanup();
 
+        // Lazily store this app's BackendManager if it has the auth tables (User/Role).
+        // This lets resolve_role find User/Role records when handling requests for other
+        // apps whose BackendManager only contains that app's own tables.
+        if SHARED_AUTH_BACKEND.get().is_none() {
+            if let Some(bm) = params.backend_manager() {
+                if bm.get_backend_for_table(TABLE_ROLE).is_ok() {
+                    SHARED_AUTH_BACKEND.set(bm.clone()).ok();
+                }
+            }
+        }
+
         // Map auth identity → User with Role via direct DB queries.
         // If resolve_role fails (no User/Role tables, unknown user, etc.),
         // fall back to super_user for backward compatibility with apps
         // that don't have auth tables.
         if let Some(identity) = params.auth_identity().cloned() {
+            yeti_log!(debug, "AuthMiddleware: identity found: method={} username={}", identity.method(), identity.username());
             // Check registered auth hooks first — if any hook returns Some,
             // use that and skip default resolution
             let mut hooked = false;

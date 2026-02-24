@@ -91,6 +91,13 @@ pub static SHARED_JWT_MANAGER: OnceLock<Arc<JwtManager>> = OnceLock::new();
 /// Shared auth hooks — registered by extensions for custom role resolution
 pub static SHARED_AUTH_HOOKS: OnceLock<Vec<Arc<dyn AuthHook>>> = OnceLock::new();
 
+/// Shared auth BackendManager — set on first yeti-auth request, used for cross-app role lookups.
+///
+/// When auth middleware runs for a non-yeti-auth app (e.g. demo-authentication), the request's
+/// BackendManager only has that app's tables. Storing the yeti-auth BackendManager here lets
+/// resolve_role fall back to it for User/Role lookups.
+pub static SHARED_AUTH_BACKEND: OnceLock<Arc<BackendManager>> = OnceLock::new();
+
 /// CSRF state store — short-lived tokens for OAuth login flow
 pub static CSRF_STORE: OnceLock<DashMap<String, CsrfState>> = OnceLock::new();
 

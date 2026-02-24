@@ -230,8 +230,11 @@ impl AuthProvider for OAuthAuthProvider {
             return Ok(None);
         };
 
+        yeti_log!(debug, "OAuth authenticate: session_id={}", &session_id[..16.min(session_id.len())]);
+
         // Try in-memory cache first
         if let Some((user, _provider_key, provider_type)) = self.session_cache.get(session_id) {
+            yeti_log!(debug, "OAuth authenticate: cache hit, provider_type={}", provider_type);
             let email = user.opt_str("email")
                 .map(|s| s.to_string());
             return Ok(Some(AuthIdentity::OAuth {
@@ -241,12 +244,17 @@ impl AuthProvider for OAuthAuthProvider {
             }));
         }
 
+        yeti_log!(debug, "OAuth authenticate: cache miss, trying DB (backend={})", backend.is_some());
+
         // Cache miss — try the database (survives restarts)
         if let Some(bm) = backend {
+            let has_session_table = bm.get_backend_for_table(TABLE_OAUTH_SESSION).is_ok();
+            yeti_log!(debug, "OAuth authenticate: has OAuthSession backend={}", has_session_table);
             if let Ok(session_backend) = bm.get_backend_for_table(TABLE_OAUTH_SESSION) {
                 let record: Option<serde_json::Value> = TableExt::get(
                     session_backend.as_ref(), session_id,
                 ).await.unwrap_or(None);
+                yeti_log!(debug, "OAuth authenticate: DB record found={}", record.is_some());
 
                 if let Some(record) = record {
                     // Check session expiry
