@@ -17,9 +17,6 @@
 use yeti_core::prelude::*;
 use yeti_core::routing::RequestMiddleware;
 
-use crate::auth_types::*;
-use crate::auth_crypto::*;
-use crate::auth_session::*;
 use crate::auth_providers::*;
 use crate::auth_ssrf::*;
 
@@ -278,12 +275,6 @@ impl RequestMiddleware for AuthMiddleware {
 /// Auth resource — provides authentication status endpoint.
 #[derive(Clone, Default)]
 pub struct AuthResource;
-
-impl AuthResource {
-    pub fn new() -> Self {
-        Self
-    }
-}
 
 impl Resource for AuthResource {
     fn name(&self) -> &str {

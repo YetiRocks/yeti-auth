@@ -64,14 +64,6 @@ impl JwtManager {
         }
     }
 
-    pub fn with_ttls(secret: String, access_ttl: u64, refresh_ttl: u64) -> Self {
-        Self {
-            secret,
-            access_ttl,
-            refresh_ttl,
-        }
-    }
-
     /// Generate an access + refresh token pair.
     /// Permissions are embedded in the access token so no DB lookup is needed on validation.
     pub fn generate_token_pair(

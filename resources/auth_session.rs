@@ -246,20 +246,6 @@ impl SessionCache {
         });
     }
 
-    /// Check if a session's OAuth token needs refresh (expires within 5 minutes)
-    pub fn needs_refresh(&self, session_id: &str) -> bool {
-        if let Some(entry) = self.sessions.get(session_id) {
-            if let Some(ref tokens) = entry.tokens {
-                if let Some(expires_at) = tokens.expires_at {
-                    return expires_at.checked_duration_since(Instant::now())
-                        .map(|remaining| remaining < Duration::from_secs(300))
-                        .unwrap_or(true); // Already expired
-                }
-            }
-        }
-        false
-    }
-
     /// Update tokens for an existing session after refresh
     pub fn update_tokens(&self, session_id: &str, new_tokens: OAuthTokens) {
         if let Some(mut entry) = self.sessions.get_mut(session_id) {
