@@ -143,6 +143,8 @@ fn exchange_token_and_fetch_user(
 impl Resource for OauthCallback {
     fn name(&self) -> &str { "oauth_callback" }
 
+    fn is_public(&self) -> bool { true }
+
     fn get(&self, req: Request<Vec<u8>>, ctx: ResourceParams) -> ResourceFuture {
         Box::pin(async move {
             let uri = req.uri().to_string();

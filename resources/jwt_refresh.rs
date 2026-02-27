@@ -36,6 +36,10 @@ impl Resource for JwtRefreshResource {
         "jwt_refresh"
     }
 
+    fn is_public(&self) -> bool {
+        true
+    }
+
     post!(request, ctx, {
         let body = request.json_value()?;
         let refresh_token = body.require_str("refresh_token")?;

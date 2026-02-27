@@ -15,6 +15,8 @@ pub struct OauthLogout;
 impl Resource for OauthLogout {
     fn name(&self) -> &str { "oauth_logout" }
 
+    fn is_public(&self) -> bool { true }
+
     fn post(&self, req: Request<Vec<u8>>, ctx: ResourceParams) -> ResourceFuture {
         Box::pin(async move {
             if let Some(session_id) = CookieParser::get_cookie(&req, SESSION_COOKIE) {

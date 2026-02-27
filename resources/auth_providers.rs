@@ -161,22 +161,27 @@ impl AuthProvider for JwtAuthProvider {
     async fn authenticate(
         &self,
         req: &Request<Vec<u8>>,
-        _cookies: &CookieJar,
+        cookies: &CookieJar,
         _backend: Option<&BackendManager>,
     ) -> std::result::Result<Option<AuthIdentity>, AuthError> {
-        let Some(auth_header) = req.headers().get("Authorization") else {
+        // Try Authorization header first, then fall back to httpOnly cookie
+        let token = if let Some(auth_header) = req.headers().get("Authorization") {
+            let header_str = auth_header
+                .to_str()
+                .map_err(|_| AuthError::InvalidCredentials)?;
+            match header_str.strip_prefix("Bearer ") {
+                Some(t) => Some(t.to_string()),
+                None => None,
+            }
+        } else {
+            cookies.get("yeti_token").map(|s| s.to_string())
+        };
+
+        let Some(token) = token else {
             return Ok(None);
         };
 
-        let header_str = auth_header
-            .to_str()
-            .map_err(|_| AuthError::InvalidCredentials)?;
-
-        let Some(token) = header_str.strip_prefix("Bearer ") else {
-            return Ok(None);
-        };
-
-        let claims = self.jwt_manager.validate_token(token)?;
+        let claims = self.jwt_manager.validate_token(&token)?;
 
         // Only accept access tokens (not refresh tokens)
         if claims.token_type != "access" {

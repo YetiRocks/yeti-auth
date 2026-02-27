@@ -171,9 +171,11 @@ pub fn validate_csrf_state(state: &str) -> Option<CsrfState> {
 
 /// Build the OAuth callback URL from the request Host header
 pub fn build_callback_url(req: &Request<Vec<u8>>) -> String {
-    let host = req.headers().get("host")
+    // Behind a reverse proxy (Cloudflare, nginx), prefer forwarded headers
+    let host = req.headers().get("x-forwarded-host")
+        .or_else(|| req.headers().get("host"))
         .and_then(|h| h.to_str().ok())
-        .unwrap_or("localhost:9996");
+        .unwrap_or("localhost");
     let scheme = req.headers().get("x-forwarded-proto")
         .and_then(|h| h.to_str().ok())
         .unwrap_or("https");

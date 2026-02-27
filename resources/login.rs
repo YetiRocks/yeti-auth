@@ -57,6 +57,10 @@ impl Resource for LoginResource {
         "login"
     }
 
+    fn is_public(&self) -> bool {
+        true
+    }
+
     post!(request, ctx, {
         let body = request.json_value()?;
         let username = body.require_str("username")?;
@@ -181,12 +185,26 @@ impl Resource for LoginResource {
         tracker.remove(&rate_key);
 
         yeti_log!(info, "LOGIN_SUCCESS: username={}", username);
-        reply().json(json!({
-            "access_token": tokens.access_token,
-            "refresh_token": tokens.refresh_token,
-            "expires_in": tokens.expires_in,
-            "token_type": "Bearer"
-        }))
+
+        let cookie = CookieBuilder::new("yeti_token", &tokens.access_token)
+            .max_age(tokens.expires_in as u64)
+            .build();
+
+        reply()
+            .header("set-cookie", &cookie)
+            .json(json!({
+                "access_token": tokens.access_token,
+                "refresh_token": tokens.refresh_token,
+                "expires_in": tokens.expires_in,
+                "token_type": "Bearer"
+            }))
+    });
+
+    delete!(_request, _ctx, {
+        let delete_cookie = CookieBuilder::delete("yeti_token");
+        reply()
+            .header("set-cookie", &delete_cookie)
+            .json(json!({ "success": true, "message": "Logged out" }))
     });
 }
 

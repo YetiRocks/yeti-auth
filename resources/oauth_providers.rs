@@ -16,6 +16,8 @@ pub struct OauthProviders;
 impl Resource for OauthProviders {
     fn name(&self) -> &str { "oauth_providers" }
 
+    fn is_public(&self) -> bool { true }
+
     fn get(&self, _req: Request<Vec<u8>>, _ctx: ResourceParams) -> ResourceFuture {
         Box::pin(async move {
             let providers = get_oauth_providers()?;

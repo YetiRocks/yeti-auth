@@ -16,6 +16,8 @@ pub struct OauthLogin;
 impl Resource for OauthLogin {
     fn name(&self) -> &str { "oauth_login" }
 
+    fn is_public(&self) -> bool { true }
+
     fn get(&self, req: Request<Vec<u8>>, _ctx: ResourceParams) -> ResourceFuture {
         Box::pin(async move {
             let uri = req.uri().to_string();

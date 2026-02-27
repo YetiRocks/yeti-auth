@@ -281,6 +281,10 @@ impl Resource for AuthResource {
         "auth"
     }
 
+    fn is_public(&self) -> bool {
+        true
+    }
+
     fn get(&self, _req: Request<Vec<u8>>, params: ResourceParams) -> ResourceFuture {
         Box::pin(async move {
             if let Some(identity) = params.auth_identity() {
